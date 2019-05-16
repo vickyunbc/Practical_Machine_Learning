@@ -1,0 +1,172 @@
+---
+title: "Practical_Machine_Learning_Project"
+author: "Waqar Younas"
+date: '2019-05-15'
+output: html_document
+keep_md: true
+---
+
+## 1. Overview
+### This assignment is requirement of the Practical Machine Learning Class at Coursera online learning website as part of Data Science Specialization. The main purpose of the project to predict the "classe" variable in the training dataset. Finally the machine learning algorithm will be used on test dataset which contains 20 cases. Answers to quiz questions will then be provided. 
+
+## 2. Dataset Background
+### Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+## 3. Reading Data and Initial Analysis
+
+### 3(a) We need particular set of libraries in order to read and explore the data. These include
+
+
+```{r, echo=TRUE}
+rm(list=ls())   ### remove any pre-existing variables or lists
+setwd("~/Documents/R_project/data/Practical_Machine_Learning")
+library(knitr)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(randomForest)
+library(corrplot)
+set.seed(3345)
+```
+
+### 3(b). Reading the Data and Cleaning (Removing any Missing Values)
+
+### Although URL for the data is provided but the data is already downloaded in the working directory. As there is training dataset and testing dataset is provided, for the sake of cross validation, we will divide the training dataset into two parts, training and validation parts. We will keep 60% in Training data and 40% in validation
+
+```{r, echo=TRUE}
+training <- read.csv("training.csv")
+testing  <- read.csv("testing.csv")
+
+# create a partition with the training dataset 
+inTrain  <- createDataPartition(training$classe, p=0.6, list=FALSE)
+trainData <- training[inTrain, ]
+testData  <- training[-inTrain, ]
+dim(trainData); dim(testData)
+# summary(trainData); summary(testData)
+```
+
+### 3(c) After checking the datasets, it is observed that variables in the data have plenty of NA values, Near Zero Variance and ID variables. All these will be removed as part of data cleaning.
+
+```{r, echo=TRUE}
+# First removing remove variables having Nearly Zero Variance
+NZV <- nearZeroVar(trainData)
+trainData <- trainData[, -NZV]
+testData  <- testData[, -NZV]
+dim(trainData); dim(testData)
+```
+
+### Now we will remove the NA values from Data
+
+```{r, echo=TRUE}
+AllNA    <- sapply(trainData, function(x) mean(is.na(x))) > 0.95
+trainData <- trainData[, AllNA==FALSE]
+testData  <- testData[, AllNA==FALSE]
+dim(trainData); dim(testData)
+```
+
+### As columns 1 to 5 are only identification variables, we need to remove those.
+
+```{r, echo=TRUE}
+trainData <- trainData[, -(1:5)]
+testData <- testData[, -(1:5)]
+dim(trainData); dim(testData)
+```
+
+### 3(e) Performing Correlation Analysis
+
+```{r, echo = TRUE}
+corMatrix <- cor(trainData[, -54])
+corrplot(corMatrix, order = "FPC", method = "color", type = "lower", 
+         tl.cex = 0.8, tl.col = rgb(0, 0, 0))
+
+```
+
+
+## 4. Building Different Prediction Models
+
+### The final and most important step in the assighment is to build prediction model. Three methods will be used on the training dataset (trainData) and their accuracies will be measures. The one with higher accuracy will be used on testData to answer the questions in the quiz. These three methods are Random Forests, Decision Trees, and Generalized Boosted Model.
+
+### 4(a) Random Forest Method
+
+```{r, echo = TRUE}
+set.seed(3345)
+controlRF <- trainControl(method="cv", number=3, verboseIter=FALSE)
+modFitRandForest <- train(classe ~ ., data=trainData, method="rf",
+                          trControl=controlRF)
+modFitRandForest$finalModel
+
+```
+### Predicting on the test data
+
+```{r, echo=TRUE}
+# prediction on Test dataset
+predictRandForest <- predict(modFitRandForest, newdata=testData)
+confusion_Mat_Ran_forest <- confusionMatrix(predictRandForest, testData$classe)
+confusion_Mat_Ran_forest
+
+```
+
+### Plotting the results from Random Forest prediction on test data
+
+```{r, echo=TRUE}
+# plot matrix results
+plot(confusion_Mat_Ran_forest$table, col = confusion_Mat_Ran_forest$byClass, 
+     main = paste("Random Forest - Accuracy =",
+                  round(confusion_Mat_Ran_forest$overall['Accuracy'], 4)))
+
+```
+
+## 4(b) Prediction by Decision Trees
+
+```{r, echo=TRUE}
+# model fit
+set.seed(3345)
+Fit_Dec_Tree <- rpart(classe ~ ., data=trainData, method="class")
+fancyRpartPlot(Fit_Dec_Tree)
+# predicting on Test data
+predict_Dec_Tree <- predict(Fit_Dec_Tree, newdata=testData, type="class")
+confusion_Mat_Dec_Tree <- confusionMatrix(predict_Dec_Tree, testData$classe)
+confusion_Mat_Dec_Tree
+## Plotting the prediction by Decision Trees
+plot(confusion_Mat_Dec_Tree$table, col = confusion_Mat_Dec_Tree$byClass, 
+     main = paste("Decision Tree - Accuracy =",
+                  round(confusion_Mat_Dec_Tree$overall['Accuracy'], 4)))
+```
+
+### 4(c) Prediction by Generalized Boosted Model
+```{r, echo=TRUE}
+# model fit
+library(gbm)
+set.seed(3345)
+conGBM <- trainControl(method = "repeatedcv", number = 5, repeats = 1)
+mod_fit_GBM  <- train(classe ~ ., data=trainData, method = "gbm",
+                    trControl = conGBM, verbose = FALSE)
+mod_fit_GBM$finalModel
+
+# prediction using test data
+predict_GBM <- predict(mod_fit_GBM, newdata=testData)
+confusion_mat_GBM <- confusionMatrix(predict_GBM, testData$classe)
+confusion_mat_GBM
+
+# plotting GBM results
+plot(confusion_mat_GBM$table, col = confusion_mat_GBM$byClass, 
+     main = paste("GBM - Accuracy =", round(confusion_mat_GBM$overall['Accuracy'], 4)))
+```
+
+
+## 5. Finally Selection of Best Model Fit among all three models above
+### The accuracy for all three regression models is shown below
+
+### 1. Random Forest: 0.9973
+### 2. Decision Trees: 0.7309
+### 3. GBM: 0.9869
+### It is clear that Random Forest Model will be applied to predict the 20 observations of test data and then the answers to quiz questions will be given.
+
+```{r, echo=TRUE}
+prediction_20_test <- predict(modFitRandForest, newdata=testing)
+prediction_20_test
+
+```
+
+
